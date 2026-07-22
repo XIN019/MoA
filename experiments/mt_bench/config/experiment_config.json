@@ -1,0 +1,101 @@
+{
+  "experiment_name": "mt_bench_moa_reproduction",
+  "config_version": 1,
+  "created_date": "2026-07-22",
+
+  "benchmark": {
+    "name": "MT-Bench",
+    "question_file": "experiments/mt_bench/data/question.jsonl",
+    "turns_per_question": 2,
+    "categories": [
+      "writing",
+      "roleplay",
+      "reasoning",
+      "math",
+      "coding",
+      "extraction",
+      "stem",
+      "humanities"
+    ]
+  },
+
+  "models": {
+    "reference_models": [
+      "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+      "Qwen/Qwen3.7-Max",
+      "moonshotai/Kimi-K2.7-Code",
+      "deepseek-ai/DeepSeek-V4-Pro"
+    ],
+    "aggregator_model": "deepseek-ai/DeepSeek-V4-Pro"
+  },
+
+  "modes": {
+    "single": {
+      "reference_layers": 0,
+      "logical_requests_per_turn": 1
+    },
+    "two-layer": {
+      "reference_layers": 1,
+      "reference_models_per_layer": 4,
+      "logical_requests_per_turn": 5
+    },
+    "three-layer": {
+      "reference_layers": 2,
+      "reference_models_per_layer": 4,
+      "logical_requests_per_turn": 9
+    }
+  },
+
+  "generation": {
+    "temperature": 0.7,
+    "single_initial_max_tokens": 4096,
+    "reference_layer_1_initial_max_tokens": 2048,
+    "reference_layer_2_initial_max_tokens": 4096,
+    "aggregator_initial_max_tokens": 4096,
+    "retry_token_limit": 8192,
+    "max_attempts_per_logical_request": 4
+  },
+
+  "retry_policy": {
+    "retry_on_finish_reason_length": true,
+    "retry_on_empty_content_caused_by_length": true,
+    "retry_on_http_429": true,
+    "rate_limit_backoff_seconds": [
+      1,
+      2,
+      4
+    ]
+  },
+
+  "conversation": {
+    "multi_turn": true,
+    "turn_2_reads_previous_final_answer": true,
+    "reference_models_read_previous_turn_history": true,
+    "layer_2_reads_all_layer_1_answers": true,
+    "aggregator_reads_last_reference_layer": true
+  },
+
+  "logging": {
+    "save_reference_layer_outputs": true,
+    "save_final_answer": true,
+    "save_attempt_records": true,
+    "save_logical_request_count": true,
+    "save_actual_api_request_count": true,
+    "save_retry_count": true,
+    "save_wall_time": true,
+    "save_api_attempt_time": true
+  },
+
+  "current_pilot_questions": {
+    "writing": 81,
+    "reasoning": 101,
+    "math": 111,
+    "coding": 121
+  },
+
+  "evaluation_status": {
+    "human_pilot_review": true,
+    "llm_judge_enabled": false,
+    "code_execution_enabled": false
+  }
+}
