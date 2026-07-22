@@ -296,10 +296,9 @@ async def run_mt_bench_question(
             2,
         )
 
-        turn_duration = round(
-            time.perf_counter() - turn_start,
-            2,
-        )
+        turn_wall_time = time.perf_counter() - turn_start
+
+        turn_duration = round(turn_wall_time, 2)
 
         print(
             f"Turn {turn_number} 统计："
@@ -339,6 +338,7 @@ async def run_mt_bench_question(
                 "api_attempt_duration_seconds": (
                     turn_api_attempt_duration
                 ),
+                "wall_time_seconds": turn_wall_time,
                 "turn_duration_seconds": turn_duration,
 
                 "layers": layers,

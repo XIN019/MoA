@@ -224,6 +224,14 @@ def main() -> None:
     )
     print("批次日志：", log_path)
 
+    failed_count = sum(
+        record["status"] == "failed"
+        for record in records
+    )
+
+    if failed_count > 0:
+        sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
