@@ -1,1 +1,18 @@
 __pycache__
+
+# MT-Bench private judge mappings
+experiments/mt_bench/judge/data/judge_answer_key.json
+
+# Python backup files
+*.py.bak
+
+# Generated experiment outputs
+outputs/
+experiments/moa_eval/results/
+experiments/mt_bench/results/
+
+# Downloaded benchmark data
+experiments/mt_bench/data/
+
+# Generated anonymous judge data and private mappings
+experiments/mt_bench/judge/data/
