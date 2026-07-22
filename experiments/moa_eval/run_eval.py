@@ -11,7 +11,6 @@ from typing import Any
 
 from together import AsyncTogether
 
-
 QUESTION_FILE = Path(__file__).with_name("questions.jsonl")
 RESULT_DIR = Path(__file__).with_name("results")
 
@@ -37,18 +36,13 @@ def load_question(question_id: str) -> dict[str, Any]:
     for line in QUESTION_FILE.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
-
         item = json.loads(line)
-
         if item["id"] == question_id:
             return item
-
     raise ValueError(f"没有找到题目：{question_id}")
 
 
-def format_previous_responses(
-    results: list[dict[str, Any]],
-) -> str:
+def format_previous_responses(results: list[dict[str, Any]]) -> str:
     return "\n".join(
         f"{index + 1}. {result['content']}"
         for index, result in enumerate(results)
@@ -65,11 +59,7 @@ def build_messages(
     return [
         {
             "role": "system",
-            "content": (
-                AGGREGATOR_SYSTEM_PROMPT
-                + "\n"
-                + format_previous_responses(previous_results)
-            ),
+            "content": AGGREGATOR_SYSTEM_PROMPT + "\n" + format_previous_responses(previous_results),
         },
         {
             "role": "user",
@@ -101,7 +91,6 @@ async def collect_stream_response(
     async for chunk in stream:
         if not chunk.choices:
             continue
-
         choice = chunk.choices[0]
         delta = getattr(choice, "delta", None)
 
@@ -111,18 +100,14 @@ async def collect_stream_response(
 
         if content:
             content_parts.append(content)
-
             if print_stream:
                 print(content, end="", flush=True)
-
         if reasoning:
             reasoning_chars += len(str(reasoning))
-
         if current_finish_reason is not None:
             finish_reason = str(current_finish_reason)
 
     answer = "".join(content_parts).strip()
-
     if not answer:
         raise RuntimeError(
             f"{model} 返回空 content；"
@@ -136,6 +121,31 @@ async def collect_stream_response(
         "reasoning_chars": reasoning_chars,
         "finish_reason": finish_reason,
     }
+
+
+RETRYABLE_STATUS_CODES = {
+    408,  # Request Timeout
+    409,  # Conflict，部分服务会将临时状态返回为 409
+    425,  # Too Early
+    429,  # Rate Limit
+    500,  # Internal Server Error
+    502,  # Bad Gateway
+    503,  # Service Unavailable
+    504,  # Gateway Timeout
+}
+
+RETRYABLE_ERROR_TYPES = {
+    "APIConnectionError",
+    "APITimeoutError",
+    "RateLimitError",
+    "InternalServerError",
+}
+
+
+def is_retryable_api_error(exc: Exception) -> bool:
+    status_code = getattr(exc, "status_code", None)
+    error_type = type(exc).__name__
+    return status_code in RETRYABLE_STATUS_CODES or error_type in RETRYABLE_ERROR_TYPES
 
 
 async def call_model(
@@ -166,11 +176,7 @@ async def call_model(
                 print_stream=print_stream,
             )
 
-            attempt_duration = round(
-                time.perf_counter() - attempt_start_time,
-                2,
-            )
-
+            attempt_duration = round(time.perf_counter() - attempt_start_time, 2)
             attempt_record = {
                 "attempt": attempt_number,
                 "max_tokens": request_max_tokens,
@@ -184,22 +190,13 @@ async def call_model(
                 "error_message": None,
             }
 
-            if (
-                result["finish_reason"] == "length"
-                and request_max_tokens < retry_token_limit
-            ):
+            if result["finish_reason"] == "length" and request_max_tokens < retry_token_limit:
                 attempt_record["outcome"] = "truncated_retry"
                 attempt_records.append(attempt_record)
-
-                max_tokens = min(
-                    request_max_tokens * 2,
-                    retry_token_limit,
-                )
-
+                max_tokens = min(request_max_tokens * 2, retry_token_limit)
                 print(
                     f"{stage} 输出被截断，将 max_tokens "
-                    f"从 {request_max_tokens} 提高到 "
-                    f"{max_tokens} 后重试……"
+                    f"从 {request_max_tokens} 提高到 {max_tokens} 后重试……"
                 )
                 continue
 
@@ -207,45 +204,27 @@ async def call_model(
                 attempt_record["outcome"] = "truncated_at_limit"
             else:
                 attempt_record["outcome"] = "completed"
-
             attempt_records.append(attempt_record)
 
             result["stage"] = stage
-            result["duration_seconds"] = round(
-                time.perf_counter() - total_start_time,
-                2,
-            )
-            result["final_attempt_duration_seconds"] = (
-                attempt_duration
-            )
+            result["duration_seconds"] = round(time.perf_counter() - total_start_time, 2)
+            result["final_attempt_duration_seconds"] = attempt_duration
             result["api_attempt_duration_seconds"] = round(
-                sum(
-                    record["duration_seconds"]
-                    for record in attempt_records
-                ),
+                sum(record["duration_seconds"] for record in attempt_records),
                 2,
             )
             result["logical_request_count"] = 1
-            result["actual_api_request_count"] = len(
-                attempt_records
-            )
-            result["retry_count"] = max(
-                0,
-                len(attempt_records) - 1,
-            )
+            result["actual_api_request_count"] = len(attempt_records)
+            result["retry_count"] = max(0, len(attempt_records) - 1)
             result["attempts"] = attempt_records
             result["final_max_tokens"] = request_max_tokens
-
             return result
 
         except Exception as exc:
-            attempt_duration = round(
-                time.perf_counter() - attempt_start_time,
-                2,
-            )
-
+            attempt_duration = round(time.perf_counter() - attempt_start_time, 2)
             status_code = getattr(exc, "status_code", None)
             error_text = str(exc)
+            error_type = type(exc).__name__
 
             attempt_record = {
                 "attempt": attempt_number,
@@ -256,49 +235,54 @@ async def call_model(
                 "content_chars": 0,
                 "api_success": False,
                 "status_code": status_code,
-                "error_type": type(exc).__name__,
+                "error_type": error_type,
                 "error_message": error_text,
                 "outcome": "failed",
             }
 
+            # 空内容且截断场景，扩容token重试
             if (
                 "返回空 content" in error_text
                 and "finish_reason=length" in error_text
                 and request_max_tokens < retry_token_limit
             ):
                 attempt_record["finish_reason"] = "length"
-                attempt_record["outcome"] = (
-                    "empty_content_length_retry"
-                )
+                attempt_record["outcome"] = "empty_content_length_retry"
                 attempt_records.append(attempt_record)
-
-                max_tokens = min(
-                    request_max_tokens * 2,
-                    retry_token_limit,
-                )
-
+                max_tokens = min(request_max_tokens * 2, retry_token_limit)
                 print(
                     f"{stage} 的 reasoning 占满输出预算，"
-                    f"将 max_tokens 从 {request_max_tokens} "
-                    f"提高到 {max_tokens} 后重试……"
+                    f"将 max_tokens 从 {request_max_tokens} 提高到 {max_tokens} 后重试……"
                 )
                 continue
 
-            if status_code == 429 and attempt_number < max_attempts:
-                attempt_record["outcome"] = "rate_limit_retry"
+            # 可重试API异常逻辑
+            if is_retryable_api_error(exc) and attempt_number < max_attempts:
+                if status_code == 429 or error_type == "RateLimitError":
+                    outcome = "rate_limit_retry"
+                    reason = "遇到限流"
+                elif error_type == "APIConnectionError":
+                    outcome = "connection_retry"
+                    reason = "遇到连接错误"
+                elif error_type == "APITimeoutError":
+                    outcome = "timeout_retry"
+                    reason = "请求超时"
+                else:
+                    outcome = "server_error_retry"
+                    reason = f"遇到临时服务错误（status={status_code}）"
+
+                attempt_record["outcome"] = outcome
                 attempt_records.append(attempt_record)
-
-                delay = 2 ** (attempt_number - 1)
+                delay = 2 ** attempt_number
                 print(
-                    f"{stage} 遇到限流，"
-                    f"{delay} 秒后重试……"
+                    f"{stage} {reason}，"
+                    f"第 {attempt_number} 次请求失败；{delay} 秒后重试……"
                 )
-
                 await asyncio.sleep(delay)
                 continue
 
+            # 不可重试 / 达到最大重试次数，抛出异常
             attempt_records.append(attempt_record)
-
             raise RuntimeError(
                 f"{stage} 调用失败：{model}；"
                 f"{type(exc).__name__}: {exc}；"
@@ -306,6 +290,7 @@ async def call_model(
                 f"retries={max(0, len(attempt_records) - 1)}"
             ) from exc
 
+    # 循环正常走完代表全部重试耗尽
     raise RuntimeError(
         f"{stage} 重试耗尽：{model}；"
         f"actual_api_requests={len(attempt_records)}；"
@@ -321,7 +306,6 @@ async def run_reference_layer(
     previous_results: list[dict[str, Any]] | None,
 ) -> list[dict[str, Any]]:
     print(f"\n正在运行 reference layer {layer_number}……")
-
     messages = build_messages(prompt, previous_results)
 
     raw_results = await asyncio.gather(
@@ -330,9 +314,7 @@ async def run_reference_layer(
                 client,
                 model=model,
                 messages=messages,
-                max_tokens=(
-                    1024 if layer_number == 1 else 2048
-                ),
+                max_tokens=1024 if layer_number == 1 else 2048,
                 stage=f"reference-layer-{layer_number}",
             )
             for model in REFERENCE_MODELS
@@ -342,7 +324,6 @@ async def run_reference_layer(
 
     results: list[dict[str, Any]] = []
     failures: list[tuple[str, BaseException]] = []
-
     for model, item in zip(REFERENCE_MODELS, raw_results):
         if isinstance(item, BaseException):
             failures.append((model, item))
@@ -359,20 +340,13 @@ async def run_reference_layer(
     if failures:
         for model, error in failures:
             print(f"✗ {model}: {error}")
-
-        raise RuntimeError(
-            f"reference layer {layer_number} 存在失败模型"
-        )
+        raise RuntimeError(f"reference layer {layer_number} 存在失败模型")
 
     return results
 
 
-async def run_experiment(
-    question: dict[str, Any],
-    mode: str,
-) -> dict[str, Any]:
+async def run_experiment(question: dict[str, Any], mode: str) -> dict[str, Any]:
     api_key = os.getenv("TOGETHER_API_KEY")
-
     if not api_key:
         raise RuntimeError("未检测到 TOGETHER_API_KEY")
 
@@ -383,7 +357,6 @@ async def run_experiment(
 
     if mode == "single":
         print("\n正在运行 Single Model……\n")
-
         final_result = await call_model(
             client,
             model=AGGREGATOR_MODEL,
@@ -392,15 +365,10 @@ async def run_experiment(
             stage="single",
             print_stream=True,
         )
-
         request_count = 1
-
     else:
-        reference_layer_count = (
-            1 if mode == "two-layer" else 2
-        )
+        reference_layer_count = 1 if mode == "two-layer" else 2
         previous_results = None
-
         for layer_number in range(1, reference_layer_count + 1):
             previous_results = await run_reference_layer(
                 client,
@@ -408,16 +376,12 @@ async def run_experiment(
                 layer_number=layer_number,
                 previous_results=previous_results,
             )
-
-            layers.append(
-                {
-                    "layer_number": layer_number,
-                    "responses": previous_results,
-                }
-            )
+            layers.append({
+                "layer_number": layer_number,
+                "responses": previous_results,
+            })
 
         print("\n正在运行最终 Aggregator……\n")
-
         final_result = await call_model(
             client,
             model=AGGREGATOR_MODEL,
@@ -426,11 +390,9 @@ async def run_experiment(
             stage="aggregator",
             print_stream=True,
         )
-
         request_count = 5 if mode == "two-layer" else 9
 
     print()
-
     return {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "question_id": question["id"],
@@ -444,26 +406,15 @@ async def run_experiment(
         "request_count": request_count,
         "layers": layers,
         "final_result": final_result,
-        "total_duration_seconds": round(
-            time.perf_counter() - total_start,
-            2,
-        ),
+        "total_duration_seconds": round(time.perf_counter() - total_start, 2),
     }
 
 
 def save_result(record: dict[str, Any]) -> Path:
     RESULT_DIR.mkdir(parents=True, exist_ok=True)
-
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = RESULT_DIR / (
-        f"{record['question_id']}_{record['mode']}_{timestamp}.jsonl"
-    )
-
-    output_path.write_text(
-        json.dumps(record, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-
+    output_path = RESULT_DIR / f"{record['question_id']}_{record['mode']}_{timestamp}.jsonl"
+    output_path.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
     return output_path
 
 
@@ -479,7 +430,6 @@ def main() -> None:
     args = parser.parse_args()
 
     question = load_question(args.question_id)
-
     request_counts = {
         "single": 1,
         "two-layer": 5,

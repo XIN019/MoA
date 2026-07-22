@@ -64,22 +64,45 @@ def discover_complete_questions() -> list[int]:
     for path in RESULT_DIR.glob("q*_*.jsonl"):
         try:
             record = load_jsonl_record(path)
-            question_id = int(record["question_id"])
-            mode = str(record["mode"])
+
+            question_id = int(
+                record["question_id"]
+            )
+            mode = str(
+                record["mode"]
+            ).strip()
 
             question_modes.setdefault(
                 question_id,
                 set(),
             ).add(mode)
 
-        except Exception:
-            continue
+        except Exception as exc:
+            print(
+                f"跳过无法读取的结果文件："
+                f"{path.name}: {exc}"
+            )
+
+    print("发现的题目及模式：")
+
+    for question_id in sorted(question_modes):
+        modes = question_modes[question_id]
+        print(
+            f"  Question {question_id}: "
+            f"{sorted(modes)}"
+        )
 
     complete_questions = [
         question_id
-        for question_id, modes in question_modes.items()
-        if all(mode in modes for mode in MODES)
+        for question_id, modes
+        in question_modes.items()
+        if set(MODES).issubset(modes)
     ]
+
+    print(
+        "三种模式均完整的题目：",
+        sorted(complete_questions),
+    )
 
     return sorted(complete_questions)
 

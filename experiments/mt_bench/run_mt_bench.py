@@ -14,7 +14,7 @@ from together import AsyncTogether
 
 
 BASE_DIR = Path(__file__).resolve().parent
-QUESTION_FILE = BASE_DIR / "data" / "pilot_questions.jsonl"
+QUESTION_FILE = BASE_DIR / "data" / "question.jsonl"
 RESULT_DIR = BASE_DIR / "results"
 
 # 复用前面已经验证过的模型调用和重试逻辑。
